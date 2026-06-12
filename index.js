@@ -97,6 +97,7 @@ app.get('/api/search', async (req, res) => {
     try {
       sharedBrowser = await puppeteer.launch({
         headless: 'new',
+        executablePath: '/usr/bin/chromium',
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
       });
 
