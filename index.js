@@ -95,9 +95,18 @@ app.get('/api/search', async (req, res) => {
     let sharedBrowser;
     let puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults;
     try {
+      const { execSync } = require('child_process');
+      let chromePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      if (!chromePath) {
+        try { chromePath = execSync('which google-chrome-stable').toString().trim(); } catch(e) {}
+        if (!chromePath) { try { chromePath = execSync('which google-chrome').toString().trim(); } catch(e) {} }
+        if (!chromePath) { try { chromePath = execSync('which chromium-browser').toString().trim(); } catch(e) {} }
+        if (!chromePath) { try { chromePath = execSync('which chromium').toString().trim(); } catch(e) {} }
+      }
+      
       sharedBrowser = await puppeteer.launch({
         headless: 'new',
-        executablePath: '/usr/bin/google-chrome-stable',
+        executablePath: chromePath,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
       });
 
