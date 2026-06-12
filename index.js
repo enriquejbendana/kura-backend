@@ -183,7 +183,7 @@ app.get('/api/search', async (req, res) => {
     });
   } catch (error) {
     console.error('[Error General Scraping]', error);
-    res.status(500).json({ error: 'Ocurrió un error al extraer los datos de las farmacias' });
+    res.status(500).json({ error: 'Ocurrió un error al extraer los datos de las farmacias', details: error.toString() });
   }
 });
 
