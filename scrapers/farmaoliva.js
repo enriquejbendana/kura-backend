@@ -1,15 +1,20 @@
 const puppeteer = require('puppeteer');
 
-const scrapeFarmaoliva = async (query) => {
+const scrapeFarmaoliva = async (query, sharedBrowser) => {
   console.log(`[Farmaoliva] Iniciando búsqueda de: ${query}`);
   const url = `https://www.farmaoliva.com.py/catalogo?q=${encodeURIComponent(query)}`;
   
-  let browser;
+  let browser = sharedBrowser;
+  let closeBrowser = false;
   try {
-    browser = await puppeteer.launch({ 
-      headless: 'new', executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
-    });
+    if (!browser) {
+      browser = await puppeteer.launch({
+        headless: 'new',
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+      });
+      closeBrowser = true;
+    }
     const page = await browser.newPage();
     
     await page.setRequestInterception(true);
@@ -89,7 +94,7 @@ const scrapeFarmaoliva = async (query) => {
     console.error('[Farmaoliva] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'farmaoliva', name: 'Farmaoliva' } };
   } finally {
-    if (browser) await browser.close();
+    if (browser) if (closeBrowser) { await browser.close(); }
   }
 };
 

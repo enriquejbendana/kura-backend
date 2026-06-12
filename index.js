@@ -91,14 +91,26 @@ app.get('/api/search', async (req, res) => {
   console.log(`[Búsqueda] Solicitud entrante para: "${query}"`);
 
   try {
-    // Ejecutar scrapers en paralelo para mayor velocidad
-    const [puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults] = await Promise.all([
-      scrapePuntoFarma(query),
-      scrapeFarmacenter(query),
-      scrapeCatedral(query),
-      scrapeFarmaoliva(query),
-      scrapeFarmatotal(query)
-    ]);
+    const puppeteer = require('puppeteer');
+    let sharedBrowser;
+    let puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults;
+    try {
+      sharedBrowser = await puppeteer.launch({
+        headless: 'new',
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+      });
+
+      [puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults] = await Promise.all([
+        scrapePuntoFarma(query, sharedBrowser),
+        scrapeFarmacenter(query, sharedBrowser),
+        scrapeCatedral(query, sharedBrowser),
+        scrapeFarmaoliva(query, sharedBrowser),
+        scrapeFarmatotal(query, sharedBrowser)
+      ]);
+    } finally {
+      if (sharedBrowser) await sharedBrowser.close();
+    }
 
     const errors = [];
     let combinedResults = [];

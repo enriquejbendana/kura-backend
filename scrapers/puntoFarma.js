@@ -1,15 +1,20 @@
 const puppeteer = require('puppeteer');
 
-const scrapePuntoFarma = async (query) => {
+const scrapePuntoFarma = async (query, sharedBrowser) => {
   console.log(`[Punto Farma] Iniciando búsqueda de: ${query}`);
   const url = `https://www.puntofarma.com.py/buscar?s=${encodeURIComponent(query)}`;
   
-  let browser;
+  let browser = sharedBrowser;
+  let closeBrowser = false;
   try {
-    browser = await puppeteer.launch({ 
-      headless: 'new', executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
-    });
+    if (!browser) {
+      browser = await puppeteer.launch({
+        headless: 'new',
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+      });
+      closeBrowser = true;
+    }
     const page = await browser.newPage();
     
     // Bloquear recursos innecesarios para mayor velocidad
@@ -96,7 +101,7 @@ const scrapePuntoFarma = async (query) => {
     console.error('[Punto Farma] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'punto-farma', name: 'Punto Farma' } };
   } finally {
-    if (browser) await browser.close();
+    if (browser) if (closeBrowser) { await browser.close(); }
   }
 };
 

@@ -1,15 +1,20 @@
 const puppeteer = require('puppeteer');
 
-const scrapeFarmatotal = async (query) => {
+const scrapeFarmatotal = async (query, sharedBrowser) => {
   console.log(`[Farmatotal] Iniciando búsqueda de: ${query}`);
   const url = `https://www.farmatotal.com.py/?post_type=product&s=${encodeURIComponent(query)}`;
   
-  let browser;
+  let browser = sharedBrowser;
+  let closeBrowser = false;
   try {
-    browser = await puppeteer.launch({ 
-      headless: 'new', executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
-    });
+    if (!browser) {
+      browser = await puppeteer.launch({
+        headless: 'new',
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+      });
+      closeBrowser = true;
+    }
     const page = await browser.newPage();
     
     await page.setRequestInterception(true);
@@ -92,7 +97,7 @@ const scrapeFarmatotal = async (query) => {
     console.error('[Farmatotal] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'farmatotal', name: 'Farmatotal' } };
   } finally {
-    if (browser) await browser.close();
+    if (browser) if (closeBrowser) { await browser.close(); }
   }
 };
 

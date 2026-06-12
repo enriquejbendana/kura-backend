@@ -1,15 +1,20 @@
 const puppeteer = require('puppeteer');
 
-const scrapeFarmacenter = async (query) => {
+const scrapeFarmacenter = async (query, sharedBrowser) => {
   console.log(`[Farmacenter] Iniciando búsqueda de: ${query}`);
   const url = `https://www.farmacenter.com.py/catalogo?q=${encodeURIComponent(query)}`;
   
-  let browser;
+  let browser = sharedBrowser;
+  let closeBrowser = false;
   try {
-    browser = await puppeteer.launch({ 
-      headless: 'new', executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
-    });
+    if (!browser) {
+      browser = await puppeteer.launch({
+        headless: 'new',
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+      });
+      closeBrowser = true;
+    }
     const page = await browser.newPage();
     
     await page.setRequestInterception(true);
@@ -90,7 +95,7 @@ const scrapeFarmacenter = async (query) => {
     console.error('[Farmacenter] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'farmacenter', name: 'Farmacenter' } };
   } finally {
-    if (browser) await browser.close();
+    if (browser) if (closeBrowser) { await browser.close(); }
   }
 };
 
