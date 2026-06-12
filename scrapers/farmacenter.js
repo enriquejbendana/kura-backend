@@ -62,7 +62,13 @@ const scrapeFarmacenter = async (query, sharedBrowser) => {
         
         if (titleEl && priceEl) {
           const titleText = titleEl.innerText.trim();
-          const priceText = priceEl.innerText.replace(/[^\d]/g, '');
+          const priceMatches = priceEl.innerText.match(/\d[\d\.,]*/g);
+          let parsedPrice = 0;
+          if (priceMatches) {
+            const prices = priceMatches.map(str => parseInt(str.replace(/[^\d]/g, ''), 10)).filter(p => p > 0);
+            if (prices.length > 0) parsedPrice = Math.min(...prices);
+          }
+          const priceText = parsedPrice > 0 ? parsedPrice.toString() : '';
           const imageUrl = imgEl ? (imgEl.getAttribute('data-src') || imgEl.getAttribute('data-original') || imgEl.getAttribute('data-lazy-src') || imgEl.src) : null;
           
           if (titleText && priceText) {
