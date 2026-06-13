@@ -187,6 +187,61 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+app.post('/api/symptom-checker', (req, res) => {
+  const { symptoms } = req.body;
+  if (!symptoms) return res.status(400).json({ error: 'No symptoms provided' });
+  
+  const text = symptoms.toLowerCase();
+  
+  const emergencyKeywords = ['pecho', 'brazo', 'respirar', 'ahogo', 'sangre', 'desmayo', 'corazón', 'infarto'];
+  const isEmergency = emergencyKeywords.some(keyword => text.includes(keyword));
+  
+  if (isEmergency) {
+    return res.json({
+      isEmergency: true,
+      message: 'Por la naturaleza de tus síntomas, es recomendable acudir a tu centro médico de confianza donde un médico especializado podrá brindarte el tratamiento exacto que necesitas. Por favor, realiza una consulta médica a la brevedad.',
+      conditions: [],
+      suggestedSearch: ''
+    });
+  }
+  
+  let conditions = [];
+  let suggestedSearch = '';
+  
+  if (text.includes('cabeza') || text.includes('migraña')) {
+    conditions.push('Cefalea o dolor de cabeza tensional');
+    if (!suggestedSearch) suggestedSearch = 'analgésico';
+  }
+  if (text.includes('fiebre') || text.includes('calentura')) {
+    conditions.push('Cuadro febril');
+    if (!suggestedSearch) suggestedSearch = 'antitérmico';
+  }
+  if (text.includes('garganta') || text.includes('tos') || text.includes('moco') || text.includes('gripe')) {
+    conditions.push('Cuadro gripal o resfriado común');
+    if (!suggestedSearch) suggestedSearch = 'antigripal';
+  }
+  if (text.includes('estómago') || text.includes('acidez') || text.includes('reflujo') || text.includes('panza') || text.includes('ardor')) {
+    conditions.push('Acidez o indigestión estomacal');
+    if (!suggestedSearch) suggestedSearch = 'antiácido';
+  }
+  if (text.includes('alergia') || text.includes('estornudo') || text.includes('picazón') || text.includes('roncha')) {
+    conditions.push('Alergia estacional o reacción alérgica leve');
+    if (!suggestedSearch) suggestedSearch = 'antialérgico';
+  }
+  
+  if (conditions.length === 0) {
+    conditions.push('Malestar inespecífico');
+    suggestedSearch = 'analgésico';
+  }
+  
+  return res.json({
+    isEmergency: false,
+    message: `Tus síntomas podrían estar asociados a: ${conditions.join(' / ')}.`,
+    conditions: conditions,
+    suggestedSearch: suggestedSearch
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Servidor Scraper corriendo en http://localhost:${PORT}`);
 });
