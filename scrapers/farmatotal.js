@@ -56,7 +56,7 @@ const scrapeFarmatotal = async (query, sharedBrowser) => {
         if (index > 9) return;
         
         const titleEl = el.querySelector('.woocommerce-loop-product__title, h2, h3');
-        const priceEl = el.querySelector('.price .amount, .precio');
+        const priceEl = el.querySelector('.price, .precio');
         const imgEl = el.querySelector('img');
         const linkEl = el.querySelector('a');
         
