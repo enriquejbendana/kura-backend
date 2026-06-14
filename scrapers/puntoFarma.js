@@ -67,10 +67,11 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
           const cardText = el.innerText;
           const imageUrl = imgEl ? (imgEl.getAttribute('data-src') || imgEl.getAttribute('data-original') || imgEl.getAttribute('data-lazy-src') || imgEl.src) : null;
           
-          const priceMatch = cardText.match(/Gs\.\s*([\d.]+)/);
+          const pricesMatches = [...cardText.matchAll(/Gs\.\s*([\d.]+)/g)];
           
-          if (titleText && priceMatch) {
-            const priceText = priceMatch[1].replace(/\./g, '');
+          if (titleText && pricesMatches.length > 0) {
+            const allPrices = pricesMatches.map(m => parseInt(m[1].replace(/\./g, ''), 10));
+            const priceText = Math.min(...allPrices).toString();
             
             results.push({
               id: `pf-${index}`,
