@@ -63,6 +63,7 @@ const scrapeFarmacenter = async (query, sharedBrowser) => {
         if (titleEl && priceEl) {
           const titleText = titleEl.innerText.trim();
           const cardText = el.innerText;
+          const cardHtml = el.innerHTML;
           const priceMatches = cardText.match(/\d[\d\.,]*/g);
           const imageUrl = imgEl ? (imgEl.getAttribute('data-src') || imgEl.getAttribute('data-original') || imgEl.getAttribute('data-lazy-src') || imgEl.src) : null;
           
@@ -84,7 +85,8 @@ const scrapeFarmacenter = async (query, sharedBrowser) => {
                 { regex: /sudameris/i, name: "Sudameris" }
               ];
               
-              const foundMethods = methodMatches.filter(m => m.regex.test(cardText));
+              const textAndHtml = cardText + " " + cardHtml;
+              const foundMethods = methodMatches.filter(m => m.regex.test(textAndHtml));
               
               if (foundMethods.length > 0 && uniquePrices.length > 1) {
                 specialMethod = "Con " + foundMethods[0].name;
