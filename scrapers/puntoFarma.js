@@ -71,7 +71,30 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
           
           if (titleText && pricesMatches.length > 0) {
             const allPrices = pricesMatches.map(m => parseInt(m[1].replace(/\./g, ''), 10));
-            const priceText = Math.min(...allPrices).toString();
+            const uniquePrices = [...new Set(allPrices)].sort((a, b) => a - b); // Ascendente
+            
+            let normalPrice = uniquePrices[0];
+            let specialPrice = null;
+            let specialMethod = null;
+            
+            const methodMatches = [
+              { regex: /ita[uú]\s*qr/i, name: "Itaú QR" },
+              { regex: /ita[uú]/i, name: "Itaú" },
+              { regex: /basa/i, name: "Basa" },
+              { regex: /ueno/i, name: "Ueno" },
+              { regex: /familiar/i, name: "Familiar" },
+              { regex: /sudameris/i, name: "Sudameris" }
+            ];
+            
+            const foundMethods = methodMatches.filter(m => m.regex.test(cardText));
+            
+            if (foundMethods.length > 0 && uniquePrices.length > 1) {
+              specialMethod = "Con " + foundMethods[0].name;
+              specialPrice = uniquePrices[0]; // El más barato es el especial
+              normalPrice = uniquePrices[1]; // El siguiente es el normal web
+            } else {
+              normalPrice = uniquePrices[0];
+            }
             
             results.push({
               id: `pf-${index}`,
@@ -87,7 +110,10 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
                     name: 'Punto Farma',
                     class: 'badge-punto-farma'
                   },
-                  price: parseInt(priceText, 10)
+                  price: normalPrice, // mantenemos compatibilidad
+                  normalPrice: normalPrice,
+                  specialPrice: specialPrice,
+                  specialMethod: specialMethod
                 }
               ]
             });

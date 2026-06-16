@@ -62,32 +62,57 @@ const scrapeFarmacenter = async (query, sharedBrowser) => {
         
         if (titleEl && priceEl) {
           const titleText = titleEl.innerText.trim();
-          const priceMatches = priceEl.innerText.match(/\d[\d\.,]*/g);
-          let parsedPrice = 0;
-          if (priceMatches) {
-            const prices = priceMatches.map(str => parseInt(str.replace(/[^\d]/g, ''), 10)).filter(p => p > 0);
-            if (prices.length > 0) parsedPrice = Math.min(...prices);
-          }
-          const priceText = parsedPrice > 0 ? parsedPrice.toString() : '';
+          const cardText = el.innerText;
+          const priceMatches = cardText.match(/\d[\d\.,]*/g);
           const imageUrl = imgEl ? (imgEl.getAttribute('data-src') || imgEl.getAttribute('data-original') || imgEl.getAttribute('data-lazy-src') || imgEl.src) : null;
           
-          if (titleText && priceText) {
-            results.push({
-              id: `fc-${index}`,
-              commercialName: titleText,
-              composition: '---',
-              laboratory: 'Desconocido',
-              details: 'Extraído en vivo',
-              imageUrl: imageUrl,
-              prices: [
-                {
-                  pharmacy: {
-                    id: 'farmacenter',
-                    name: 'Farmacenter',
-                    class: 'badge-farmacenter'
-                  },
-                  price: parseInt(priceText, 10)
-                }
+          if (priceMatches) {
+            const allPrices = priceMatches.map(str => parseInt(str.replace(/[^\d]/g, ''), 10)).filter(p => p > 1000);
+            const uniquePrices = [...new Set(allPrices)].sort((a, b) => a - b);
+            
+            if (uniquePrices.length > 0 && titleText) {
+              let normalPrice = uniquePrices[0];
+              let specialPrice = null;
+              let specialMethod = null;
+              
+              const methodMatches = [
+                { regex: /ita[uú]\s*qr/i, name: "Itaú QR" },
+                { regex: /ita[uú]/i, name: "Itaú" },
+                { regex: /basa/i, name: "Basa" },
+                { regex: /ueno/i, name: "Ueno" },
+                { regex: /familiar/i, name: "Familiar" },
+                { regex: /sudameris/i, name: "Sudameris" }
+              ];
+              
+              const foundMethods = methodMatches.filter(m => m.regex.test(cardText));
+              
+              if (foundMethods.length > 0 && uniquePrices.length > 1) {
+                specialMethod = "Con " + foundMethods[0].name;
+                specialPrice = uniquePrices[0];
+                normalPrice = uniquePrices[1];
+              } else {
+                normalPrice = uniquePrices[0];
+              }
+              
+              results.push({
+                id: `fc-${index}`,
+                commercialName: titleText,
+                composition: '---',
+                laboratory: 'Desconocido',
+                details: 'Extraído en vivo',
+                imageUrl: imageUrl,
+                prices: [
+                  {
+                    pharmacy: {
+                      id: 'farmacenter',
+                      name: 'Farmacenter',
+                      class: 'badge-farmacenter'
+                    },
+                    price: normalPrice,
+                    normalPrice: normalPrice,
+                    specialPrice: specialPrice,
+                    specialMethod: specialMethod
+                  }
               ]
             });
           }
