@@ -115,6 +115,7 @@ const scrapeFarmacenter = async (query, sharedBrowser) => {
                   }
               ]
             });
+            }
           }
         }
       });
