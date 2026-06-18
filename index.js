@@ -91,13 +91,15 @@ app.get('/api/search', async (req, res) => {
   console.log(`[Búsqueda] Solicitud entrante para: "${query}"`);
 
   try {
-    const puppeteer = require('puppeteer');
+    const puppeteer = require('puppeteer-extra');
+    const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+    puppeteer.use(StealthPlugin());
+    
     let sharedBrowser;
     let puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults;
     try {
       sharedBrowser = await puppeteer.launch({
         headless: 'new',
-        executablePath: '/usr/bin/chromium',
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
       });
 

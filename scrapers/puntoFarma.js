@@ -1,4 +1,6 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 
 const scrapePuntoFarma = async (query, sharedBrowser) => {
   console.log(`[Punto Farma] Iniciando búsqueda de: ${query}`);
@@ -17,19 +19,12 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
     }
     const page = await browser.newPage();
     
-    // Bloquear recursos innecesarios para mayor velocidad
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['stylesheet', 'font', 'media'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
+    // Dejar que stealth plugin maneje el User-Agent
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    // Radware Bot Manager a veces muestra una pantalla de carga y luego redirige.
+    // Esperamos pacientemente a que aparezcan los resultados reales.
+    await page.waitForSelector('.card, [class*="product"]', { timeout: 25000 }).catch(() => console.log('[Punto Farma] Timeout esperando cards'));
     
     // Auto-scroll para lazy loading
     await page.evaluate(async () => {
