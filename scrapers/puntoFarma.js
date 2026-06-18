@@ -23,8 +23,8 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     
     // Radware Bot Manager a veces muestra una pantalla de carga y luego redirige.
-    // Esperamos pacientemente a que aparezcan los resultados reales.
-    await page.waitForSelector('.card, [class*="product"]', { timeout: 25000 }).catch(() => console.log('[Punto Farma] Timeout esperando cards'));
+    // Esperamos pacientemente a que aparezcan los resultados reales usando una clase específica del producto.
+    await page.waitForSelector('.card-title', { timeout: 25000 }).catch(() => console.log('[Punto Farma] Timeout esperando card-title'));
     
     // Auto-scroll para lazy loading
     await page.evaluate(async () => {
