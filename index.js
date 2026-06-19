@@ -1,5 +1,12 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+
+const { createClient } = require('@supabase/supabase-js');
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
+const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
 const fs = require('fs');
 const path = require('path');
 const { scrapePuntoFarma } = require('./scrapers/puntoFarma');
@@ -96,20 +103,59 @@ app.get('/api/search', async (req, res) => {
     puppeteer.use(StealthPlugin());
     
     let sharedBrowser;
-    let puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults;
+    let puntoFarmaResults = [];
+    let farmacenterResults, catedralResults, olivaResults, totalResults;
+    let puntoFarmaFromCache = false;
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('medicamentos_cache')
+          .select('*')
+          .eq('query', query.toLowerCase())
+          .eq('pharmacy_id', 'punto-farma');
+          
+        if (!error && data && data.length > 0) {
+          console.log(`[Punto Farma] Cargando ${data.length} resultados desde CACHE`);
+          puntoFarmaFromCache = true;
+          puntoFarmaResults = data.map(item => ({
+            id: item.product_id,
+            commercialName: item.commercial_name,
+            composition: '---',
+            laboratory: 'Desconocido',
+            details: 'Extraído desde Caché',
+            imageUrl: item.image_url,
+            prices: [{
+              pharmacy: { id: 'punto-farma', name: 'Punto Farma', class: 'badge-punto-farma' },
+              price: item.price
+            }]
+          }));
+        }
+      } catch (err) {
+        console.error("Error consultando Supabase:", err.message);
+      }
+    }
+
     try {
       sharedBrowser = await puppeteer.launch({
         headless: 'new',
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
       });
 
-      [puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults] = await Promise.all([
-        scrapePuntoFarma(query, sharedBrowser),
+      const scrapers = [
         scrapeFarmacenter(query, sharedBrowser),
         scrapeCatedral(query, sharedBrowser),
         scrapeFarmaoliva(query, sharedBrowser),
         scrapeFarmatotal(query, sharedBrowser)
-      ]);
+      ];
+
+      if (!puntoFarmaFromCache) {
+        scrapers.unshift(scrapePuntoFarma(query, sharedBrowser));
+      } else {
+        scrapers.unshift(Promise.resolve(puntoFarmaResults));
+      }
+
+      [puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults] = await Promise.all(scrapers);
     } finally {
       if (sharedBrowser) await sharedBrowser.close();
     }
