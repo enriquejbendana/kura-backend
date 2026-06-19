@@ -17,6 +17,7 @@ const scrapeCatedral = async (query, sharedBrowser) => {
     }
     const page = await browser.newPage();
     
+    /*
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       if (['stylesheet', 'font', 'media'].includes(req.resourceType())) {
@@ -25,6 +26,7 @@ const scrapeCatedral = async (query, sharedBrowser) => {
         req.continue();
       }
     });
+    */
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
     
@@ -46,17 +48,17 @@ const scrapeCatedral = async (query, sharedBrowser) => {
       });
     });
 
-    await new Promise(r => setTimeout(r, 1000));
+    await page.waitForSelector('.card-producto', { timeout: 25000 }).catch(() => console.log('[Catedral] Timeout esperando card-producto'));
     
     const products = await page.evaluate(() => {
       const results = [];
-      const elementsToParse = document.querySelectorAll('.product-item, .card, [class*="product"]');
+      const elementsToParse = document.querySelectorAll('.card-producto');
       
       elementsToParse.forEach((el, index) => {
         if (index > 9) return;
         
-        const titleEl = el.querySelector('.product-title, h2, h3');
-        const priceEl = el.querySelector('.price, .precio');
+        const titleEl = el.querySelector('.card-titulo, h2, h3');
+        const priceEl = el.querySelector('.precio-principal, .precio');
         const imgEl = el.querySelector('img');
         
         if (titleEl && priceEl) {
