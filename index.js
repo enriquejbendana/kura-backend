@@ -103,22 +103,29 @@ app.get('/api/search', async (req, res) => {
     puppeteer.use(StealthPlugin());
     
     let sharedBrowser;
-    let puntoFarmaResults = [];
-    let farmacenterResults, catedralResults, olivaResults, totalResults;
-    let puntoFarmaFromCache = false;
+    let combinedResults = [];
+    let fromCache = false;
 
     if (supabase) {
       try {
         const { data, error } = await supabase
           .from('medicamentos_cache')
           .select('*')
-          .eq('query', query.toLowerCase())
-          .eq('pharmacy_id', 'punto-farma');
+          .eq('query', query.toLowerCase());
           
         if (!error && data && data.length > 0) {
-          console.log(`[Punto Farma] Cargando ${data.length} resultados desde CACHE`);
-          puntoFarmaFromCache = true;
-          puntoFarmaResults = data.map(item => ({
+          console.log(`[Cache] Cargando ${data.length} resultados desde Supabase`);
+          fromCache = true;
+          
+          const pharmacyMap = {
+            'punto-farma': { name: 'Punto Farma', class: 'badge-punto-farma' },
+            'farmacenter': { name: 'Farmacenter', class: 'badge-farmacenter' },
+            'catedral': { name: 'Farmacias Catedral', class: 'badge-catedral' },
+            'farmaoliva': { name: 'Farmaoliva', class: 'badge-farmaoliva' },
+            'farmatotal': { name: 'Farmatotal', class: 'badge-farmatotal' }
+          };
+
+          combinedResults = data.map(item => ({
             id: item.product_id,
             commercialName: item.commercial_name,
             composition: '---',
@@ -126,7 +133,7 @@ app.get('/api/search', async (req, res) => {
             details: 'Extraído desde Caché',
             imageUrl: item.image_url,
             prices: [{
-              pharmacy: { id: 'punto-farma', name: 'Punto Farma', class: 'badge-punto-farma' },
+              pharmacy: pharmacyMap[item.pharmacy_id] || { id: item.pharmacy_id, name: item.pharmacy_id, class: 'badge-default' },
               price: item.price
             }]
           }));
@@ -136,46 +143,41 @@ app.get('/api/search', async (req, res) => {
       }
     }
 
-    try {
-      sharedBrowser = await puppeteer.launch({
-        headless: 'new',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
-      });
-
-      const scrapers = [
-        scrapeFarmacenter(query, sharedBrowser),
-        scrapeCatedral(query, sharedBrowser),
-        scrapeFarmaoliva(query, sharedBrowser),
-        scrapeFarmatotal(query, sharedBrowser)
-      ];
-
-      if (!puntoFarmaFromCache) {
-        scrapers.unshift(scrapePuntoFarma(query, sharedBrowser));
-      } else {
-        scrapers.unshift(Promise.resolve(puntoFarmaResults));
-      }
-
-      [puntoFarmaResults, farmacenterResults, catedralResults, olivaResults, totalResults] = await Promise.all(scrapers);
-    } finally {
-      if (sharedBrowser) await sharedBrowser.close();
-    }
-
     const errors = [];
-    let combinedResults = [];
 
-    const processResults = (results) => {
-      if (results && results.error) {
-        errors.push(results);
-      } else if (Array.isArray(results)) {
-        combinedResults = combinedResults.concat(results);
+    // Si no hay datos en caché, intentamos raspar en vivo (fallará en Render, pero sirve en Local)
+    if (!fromCache) {
+      console.log(`[En Vivo] Sin caché para ${query}. Iniciando scraping en vivo...`);
+      try {
+        sharedBrowser = await puppeteer.launch({
+          headless: 'new',
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+        });
+
+        const scrapers = [
+          scrapePuntoFarma(query, sharedBrowser),
+          scrapeFarmacenter(query, sharedBrowser),
+          scrapeCatedral(query, sharedBrowser),
+          scrapeFarmaoliva(query, sharedBrowser),
+          scrapeFarmatotal(query, sharedBrowser)
+        ];
+
+        const liveResults = await Promise.allSettled(scrapers);
+        
+        liveResults.forEach(result => {
+          if (result.status === 'fulfilled') {
+            if (result.value && result.value.error) {
+              errors.push(result.value);
+            } else if (Array.isArray(result.value)) {
+              combinedResults = combinedResults.concat(result.value);
+            }
+          }
+        });
+
+      } finally {
+        if (sharedBrowser) await sharedBrowser.close();
       }
-    };
-
-    processResults(puntoFarmaResults);
-    processResults(farmacenterResults);
-    processResults(catedralResults);
-    processResults(olivaResults);
-    processResults(totalResults);
+    }
 
     if (combinedResults.length === 0) {
       combinedResults = [
