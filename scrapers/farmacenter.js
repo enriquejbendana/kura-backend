@@ -1,11 +1,13 @@
 const puppeteer = require('puppeteer');
 
-const scrapeFarmacenter = async (query, sharedBrowser) => {
+const scrapeFarmacenter = async (query, sharedBrowser = null) => {
   console.log(`[Farmacenter] Iniciando búsqueda de: ${query}`);
   const url = `https://www.farmacenter.com.py/catalogo?q=${encodeURIComponent(query)}`;
   
   let browser = sharedBrowser;
   let closeBrowser = false;
+  let page = null;
+  
   try {
     if (!browser) {
       browser = await puppeteer.launch({
@@ -15,7 +17,7 @@ const scrapeFarmacenter = async (query, sharedBrowser) => {
       });
       closeBrowser = true;
     }
-    const page = await browser.newPage();
+    page = await browser.newPage();
     
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -129,6 +131,7 @@ const scrapeFarmacenter = async (query, sharedBrowser) => {
     console.error('[Farmacenter] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'farmacenter', name: 'Farmacenter' } };
   } finally {
+    if (page && !page.isClosed()) { await page.close().catch(() => {}); }
     if (browser) if (closeBrowser) { await browser.close(); }
   }
 };

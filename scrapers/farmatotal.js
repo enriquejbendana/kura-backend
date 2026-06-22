@@ -1,11 +1,12 @@
 const puppeteer = require('puppeteer');
 
-const scrapeFarmatotal = async (query, sharedBrowser) => {
+const scrapeFarmatotal = async (query, sharedBrowser = null) => {
   console.log(`[Farmatotal] Iniciando búsqueda de: ${query}`);
   const url = `https://www.farmatotal.com.py/?post_type=product&s=${encodeURIComponent(query)}`;
   
   let browser = sharedBrowser;
   let closeBrowser = false;
+  let page = null;
   try {
     if (!browser) {
       browser = await puppeteer.launch({
@@ -15,7 +16,7 @@ const scrapeFarmatotal = async (query, sharedBrowser) => {
       });
       closeBrowser = true;
     }
-    const page = await browser.newPage();
+    page = await browser.newPage();
     
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -103,6 +104,7 @@ const scrapeFarmatotal = async (query, sharedBrowser) => {
     console.error('[Farmatotal] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'farmatotal', name: 'Farmatotal' } };
   } finally {
+    if (page && !page.isClosed()) { await page.close().catch(() => {}); }
     if (browser) if (closeBrowser) { await browser.close(); }
   }
 };

@@ -8,6 +8,7 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
   
   let browser = sharedBrowser;
   let closeBrowser = false;
+  let page = null;
   try {
     if (!browser) {
       browser = await puppeteer.launch({
@@ -17,7 +18,7 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
       });
       closeBrowser = true;
     }
-    const page = await browser.newPage();
+    page = await browser.newPage();
     
     // Dejar que stealth plugin maneje el User-Agent
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -123,6 +124,7 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
     console.error('[Punto Farma] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'punto-farma', name: 'Punto Farma' } };
   } finally {
+    if (page && !page.isClosed()) { await page.close().catch(() => {}); }
     if (browser) if (closeBrowser) { await browser.close(); }
   }
 };

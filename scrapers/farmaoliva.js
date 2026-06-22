@@ -6,6 +6,7 @@ const scrapeFarmaoliva = async (query, sharedBrowser) => {
   
   let browser = sharedBrowser;
   let closeBrowser = false;
+  let page = null;
   try {
     if (!browser) {
       browser = await puppeteer.launch({
@@ -15,7 +16,7 @@ const scrapeFarmaoliva = async (query, sharedBrowser) => {
       });
       closeBrowser = true;
     }
-    const page = await browser.newPage();
+    page = await browser.newPage();
     
     await page.setRequestInterception(true);
     page.on('request', (req) => {
@@ -100,6 +101,7 @@ const scrapeFarmaoliva = async (query, sharedBrowser) => {
     console.error('[Farmaoliva] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'farmaoliva', name: 'Farmaoliva' } };
   } finally {
+    if (page && !page.isClosed()) { await page.close().catch(() => {}); }
     if (browser) if (closeBrowser) { await browser.close(); }
   }
 };

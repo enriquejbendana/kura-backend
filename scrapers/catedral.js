@@ -1,11 +1,13 @@
 const puppeteer = require('puppeteer');
 
-const scrapeCatedral = async (query, sharedBrowser) => {
+const scrapeCatedral = async (query, sharedBrowser = null) => {
   console.log(`[Catedral] Iniciando búsqueda de: ${query}`);
   const url = `https://www.farmaciacatedral.com.py/buscador?q=${encodeURIComponent(query)}`;
   
   let browser = sharedBrowser;
   let closeBrowser = false;
+  let page = null;
+  
   try {
     if (!browser) {
       browser = await puppeteer.launch({
@@ -15,7 +17,7 @@ const scrapeCatedral = async (query, sharedBrowser) => {
       });
       closeBrowser = true;
     }
-    const page = await browser.newPage();
+    page = await browser.newPage();
     
     /*
     await page.setRequestInterception(true);
@@ -102,6 +104,7 @@ const scrapeCatedral = async (query, sharedBrowser) => {
     console.error('[Catedral] Error en scraping:', error.message);
     return { error: true, message: 'Caído o no responde', pharmacy: { id: 'catedral', name: 'Farmacias Catedral' } };
   } finally {
+    if (page && !page.isClosed()) { await page.close().catch(() => {}); }
     if (browser) if (closeBrowser) { await browser.close(); }
   }
 };
