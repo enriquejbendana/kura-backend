@@ -3,9 +3,14 @@ const express = require('express');
 const cors = require('cors');
 
 const { createClient } = require('@supabase/supabase-js');
+const WebSocket = require('ws');
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
-const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+  realtime: {
+    transport: WebSocket
+  }
+}) : null;
 
 const fs = require('fs');
 const path = require('path');
