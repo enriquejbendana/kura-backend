@@ -297,6 +297,73 @@ app.post('/api/symptom-checker', (req, res) => {
   });
 });
 
+app.get('/api/live-search', async (req, res) => {
+  const query = req.query.q;
+  if (!query) return res.status(400).json({ error: 'Falta parámetro q' });
+  
+  console.log(`[En Vivo API] Solicitud para: "${query}"`);
+  
+  try {
+    const puppeteer = require('puppeteer-extra');
+    const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+    puppeteer.use(StealthPlugin());
+    
+    const sharedBrowser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-blink-features=AutomationControlled']
+    });
+
+    try {
+      const scrapers = [
+        scrapeCatedral(query, sharedBrowser),
+        scrapeFarmaoliva(query, sharedBrowser),
+        scrapeFarmatotal(query, sharedBrowser)
+      ];
+
+      const liveResults = await Promise.allSettled(scrapers);
+      let combinedResults = [];
+      let errors = [];
+      
+      liveResults.forEach(result => {
+        if (result.status === 'fulfilled') {
+          if (result.value && result.value.error) {
+            errors.push(result.value);
+          } else if (Array.isArray(result.value)) {
+            combinedResults = combinedResults.concat(result.value);
+          }
+        }
+      });
+
+      // Guardar en Supabase para futuras consultas (el caché)
+      if (combinedResults.length > 0 && supabase) {
+        const cacheItems = combinedResults.map(item => {
+          const p = item.prices[0];
+          return {
+            query: query.toLowerCase(),
+            product_id: item.id,
+            commercial_name: item.commercialName,
+            price: p.price,
+            pharmacy_id: p.pharmacy.id,
+            image_url: item.imageUrl,
+            scraped_at: new Date().toISOString()
+          };
+        });
+        
+        supabase.from('medicamentos_cache').insert(cacheItems).then(({error}) => {
+          if (error) console.error('[En Vivo API] Error cacheando:', error.message);
+        });
+      }
+
+      res.json({ results: combinedResults, errors });
+    } finally {
+      if (sharedBrowser) await sharedBrowser.close();
+    }
+  } catch (err) {
+    console.error("[En Vivo API] Error Fatal:", err);
+    res.status(500).json({ error: 'Error en el servidor de scrapping' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`✅ Servidor Scraper corriendo en http://localhost:${PORT}`);
 });
