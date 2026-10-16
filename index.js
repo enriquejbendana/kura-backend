@@ -26,6 +26,7 @@ const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUP
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { scrapePuntoFarma } = require('./scrapers/puntoFarma');
 const { scrapeFarmacenter } = require('./scrapers/farmacenter');
 const { scrapeCatedral } = require('./scrapers/catedral');
@@ -457,26 +458,39 @@ app.get('/api/live-search', async (req, res) => {
         if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
           console.error('🚨 [ERROR CRÍTICO - Live Search] No se guardaron los precios en medicamentos_cache porque falta SUPABASE_SERVICE_ROLE_KEY.');
         } else if (supabase) {
-          const cacheItems = combinedResults.map(item => {
-            const p = item.prices[0];
-            return {
-              query: query.toLowerCase(),
-              product_id: item.id,
-              commercial_name: item.commercialName,
-              price: p.price,
-              pharmacy_id: p.pharmacy.id,
-              image_url: item.imageUrl,
-              updated_at: new Date().toISOString()
-            };
-          });
-          
-          supabase.from('medicamentos_cache').insert(cacheItems).then(({ error }) => {
-            if (error) {
-              console.error('🚨 [ERROR CRÍTICO - Live Search] Falló la inserción en medicamentos_cache:', error.message, error);
+          try {
+            const cacheItems = combinedResults.map(item => {
+              const p = item.prices && item.prices[0];
+              const cleanName = (item.commercialName || '').trim();
+              const pharmacyId = (p && p.pharmacy && p.pharmacy.id) ? p.pharmacy.id : 'catedral';
+              const stableId = (item.id && !item.id.match(/^(cat|oli|tot|fc|pf)-\d+$/))
+                ? item.id
+                : `${pharmacyId}-${crypto.createHash('md5').update(cleanName.toLowerCase()).digest('hex').substring(0, 10)}`;
+              item.id = stableId;
+
+              return {
+                query: query.toLowerCase(),
+                product_id: stableId,
+                commercial_name: cleanName,
+                price: p ? p.price : 0,
+                pharmacy_id: pharmacyId,
+                image_url: item.imageUrl,
+                updated_at: new Date().toISOString()
+              };
+            });
+
+            const { error: upsertErr } = await supabase
+              .from('medicamentos_cache')
+              .upsert(cacheItems, { onConflict: 'product_id' });
+
+            if (upsertErr) {
+              console.error('🚨 [ERROR CRÍTICO - Live Search] Falló el guardado en medicamentos_cache:', upsertErr.message, upsertErr);
             } else {
-              console.log(`[En Vivo API] ✅ Guardados exitosamente ${cacheItems.length} registros en medicamentos_cache con service_role`);
+              console.log(`[En Vivo API] ✅ Guardados/actualizados exitosamente ${cacheItems.length} registros en medicamentos_cache con service_role`);
             }
-          });
+          } catch (cacheErr) {
+            console.error('🚨 [ERROR CRÍTICO - Live Search] Excepción guardando en medicamentos_cache:', cacheErr.message);
+          }
         }
       }
 
