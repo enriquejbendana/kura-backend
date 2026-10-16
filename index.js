@@ -5,12 +5,19 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const isUsingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: {
     transport: WebSocket
   }
 }) : null;
+
+if (isUsingServiceRole) {
+  console.log('🔒 Supabase inicializado con SUPABASE_SERVICE_ROLE_KEY (Escritura segura garantizada)');
+} else {
+  console.warn('⚠️ Supabase inicializado con ANON KEY (Se bloqueará cuando se aplique RLS)');
+}
 
 const fs = require('fs');
 const path = require('path');
@@ -66,6 +73,70 @@ const saveVisits = (count) => {
     fs.writeFileSync(visitsFile, JSON.stringify({ count }), 'utf8');
   } catch (e) { console.error('Error guardando visits.json:', e); }
 };
+
+app.get('/api/health', async (req, res) => {
+  const status = {
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    supabase: {
+      connected: !!supabase,
+      authMode: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key'
+    }
+  };
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('medicamentos_cache').select('id').limit(1);
+      status.supabase.canRead = !error;
+      if (error) status.supabase.readError = error.message;
+    } catch (err) {
+      status.supabase.canRead = false;
+      status.supabase.readError = err.message;
+    }
+  }
+
+  res.json(status);
+});
+
+app.get('/api/verify-write', async (req, res) => {
+  if (!supabase) return res.status(500).json({ error: 'Supabase no inicializado' });
+  
+  const testItem = {
+    query: '__kura_health_check__',
+    product_id: 'test-ping-' + Date.now(),
+    commercial_name: 'Ping Test Verification',
+    price: 1,
+    pharmacy_id: 'catedral',
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    const { data, error: insertError } = await supabase.from('medicamentos_cache').insert([testItem]).select();
+    if (insertError) {
+      console.error('[Verify-Write] Error al insertar en Supabase:', insertError);
+      return res.status(500).json({
+        success: false,
+        keyUsed: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key',
+        error: insertError.message,
+        details: insertError
+      });
+    }
+
+    if (data && data[0]?.id) {
+      await supabase.from('medicamentos_cache').delete().eq('id', data[0].id);
+    }
+
+    console.log(`[Verify-Write] ✅ Escritura probada exitosamente usando ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key'}`);
+    return res.json({
+      success: true,
+      keyUsed: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key',
+      message: 'Escritura y borrado verificados exitosamente en medicamentos_cache'
+    });
+  } catch (err) {
+    console.error('[Verify-Write] Excepción:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 app.get('/api/visits', (req, res) => {
   let count = getVisits();
@@ -345,12 +416,16 @@ app.get('/api/live-search', async (req, res) => {
             price: p.price,
             pharmacy_id: p.pharmacy.id,
             image_url: item.imageUrl,
-            scraped_at: new Date().toISOString()
+            updated_at: new Date().toISOString()
           };
         });
         
-        supabase.from('medicamentos_cache').insert(cacheItems).then(({error}) => {
-          if (error) console.error('[En Vivo API] Error cacheando:', error.message);
+        supabase.from('medicamentos_cache').insert(cacheItems).then(({ error }) => {
+          if (error) {
+            console.error('[En Vivo API] Error cacheando en Supabase:', error.message, error);
+          } else {
+            console.log(`[En Vivo API] ✅ Guardados exitosamente ${cacheItems.length} registros en medicamentos_cache`);
+          }
         });
       }
 
