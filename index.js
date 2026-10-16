@@ -479,14 +479,19 @@ app.get('/api/live-search', async (req, res) => {
               };
             });
 
+            // Deduplicar por product_id para evitar error Postgres 21000 (ON CONFLICT DO UPDATE cannot affect row a second time)
+            const uniqueCacheItems = Array.from(
+              new Map(cacheItems.map(item => [item.product_id, item])).values()
+            );
+
             const { error: upsertErr } = await supabase
               .from('medicamentos_cache')
-              .upsert(cacheItems, { onConflict: 'product_id' });
+              .upsert(uniqueCacheItems, { onConflict: 'product_id' });
 
             if (upsertErr) {
               console.error('🚨 [ERROR CRÍTICO - Live Search] Falló el guardado en medicamentos_cache:', upsertErr.message, upsertErr);
             } else {
-              console.log(`[En Vivo API] ✅ Guardados/actualizados exitosamente ${cacheItems.length} registros en medicamentos_cache con service_role`);
+              console.log(`[En Vivo API] ✅ Guardados/actualizados exitosamente ${uniqueCacheItems.length} registros en medicamentos_cache con service_role`);
             }
           } catch (cacheErr) {
             console.error('🚨 [ERROR CRÍTICO - Live Search] Excepción guardando en medicamentos_cache:', cacheErr.message);
