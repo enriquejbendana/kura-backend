@@ -5,19 +5,24 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const isUsingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (SUPABASE_SERVICE_ROLE_KEY) {
+  console.log('🔒 Supabase inicializado con SUPABASE_SERVICE_ROLE_KEY (Escritura administrativa segura)');
+} else {
+  console.error('🚨 =================================================================');
+  console.error('🚨 [ERROR CRÍTICO] SUPABASE_SERVICE_ROLE_KEY NO ESTÁ CONFIGURADA!');
+  console.error('🚨 La API no podrá escribir en medicamentos_cache con las políticas RLS activas.');
+  console.error('🚨 Por favor agrega SUPABASE_SERVICE_ROLE_KEY en el panel de Render.');
+  console.error('🚨 =================================================================');
+}
+
+const SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 const supabase = (SUPABASE_URL && SUPABASE_KEY) ? createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: {
     transport: WebSocket
   }
 }) : null;
-
-if (isUsingServiceRole) {
-  console.log('🔒 Supabase inicializado con SUPABASE_SERVICE_ROLE_KEY (Escritura segura garantizada)');
-} else {
-  console.warn('⚠️ Supabase inicializado con ANON KEY (Se bloqueará cuando se aplique RLS)');
-}
 
 const fs = require('fs');
 const path = require('path');
@@ -99,6 +104,12 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.get('/api/verify-write', async (req, res) => {
+  const token = req.headers['x-admin-token'] || req.query.token;
+  const expectedToken = process.env.ADMIN_VERIFY_TOKEN || 'kura_verify_sec_99';
+  if (token !== expectedToken) {
+    return res.status(401).json({ error: 'No autorizado. Se requiere token secreto para ejecutar la verificación de escritura.' });
+  }
+
   if (!supabase) return res.status(500).json({ error: 'Supabase no inicializado' });
   
   const testItem = {
@@ -111,26 +122,62 @@ app.get('/api/verify-write', async (req, res) => {
   };
 
   try {
-    const { data, error: insertError } = await supabase.from('medicamentos_cache').insert([testItem]).select();
+    // 1. Probar inserción
+    const { data: insertedData, error: insertError } = await supabase
+      .from('medicamentos_cache')
+      .insert([testItem])
+      .select();
+
     if (insertError) {
       console.error('[Verify-Write] Error al insertar en Supabase:', insertError);
       return res.status(500).json({
         success: false,
         keyUsed: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key',
+        step: 'insert',
         error: insertError.message,
         details: insertError
       });
     }
 
-    if (data && data[0]?.id) {
-      await supabase.from('medicamentos_cache').delete().eq('id', data[0].id);
+    // 2. Probar y confirmar borrado real de la fila insertada
+    let deletedCount = 0;
+    if (insertedData && insertedData[0]?.id) {
+      const { data: deletedRows, error: deleteError } = await supabase
+        .from('medicamentos_cache')
+        .delete()
+        .eq('id', insertedData[0].id)
+        .select();
+
+      if (deleteError) {
+        console.error('[Verify-Write] Error al intentar borrar fila de prueba:', deleteError);
+      }
+      deletedCount = deletedRows ? deletedRows.length : 0;
     }
 
-    console.log(`[Verify-Write] ✅ Escritura probada exitosamente usando ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key'}`);
+    // Limpiar también cualquier registro de prueba residual previo
+    await supabase
+      .from('medicamentos_cache')
+      .delete()
+      .or('product_id.eq.test-valid-123,product_id.like.test-ping-%')
+      .select();
+
+    if (deletedCount === 0) {
+      console.error('[Verify-Write] ⚠️ Inserción exitosa pero el DELETE borró 0 filas (clave sin permisos DELETE)');
+      return res.status(500).json({
+        success: false,
+        keyUsed: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key',
+        step: 'delete',
+        error: 'El registro se insertó, pero el DELETE borró 0 filas. La clave en uso no tiene permisos para borrar filas en medicamentos_cache.',
+        deletedRowsCount: 0
+      });
+    }
+
+    console.log(`[Verify-Write] ✅ Escritura y borrado efectivo verificados con ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key'}`);
     return res.json({
       success: true,
       keyUsed: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon_key',
-      message: 'Escritura y borrado verificados exitosamente en medicamentos_cache'
+      deletedRowsConfirmed: deletedCount,
+      message: 'Escritura y borrado verificados y confirmados exitosamente en medicamentos_cache'
     });
   } catch (err) {
     console.error('[Verify-Write] Excepción:', err);
@@ -406,27 +453,31 @@ app.get('/api/live-search', async (req, res) => {
       });
 
       // Guardar en Supabase para futuras consultas (el caché)
-      if (combinedResults.length > 0 && supabase) {
-        const cacheItems = combinedResults.map(item => {
-          const p = item.prices[0];
-          return {
-            query: query.toLowerCase(),
-            product_id: item.id,
-            commercial_name: item.commercialName,
-            price: p.price,
-            pharmacy_id: p.pharmacy.id,
-            image_url: item.imageUrl,
-            updated_at: new Date().toISOString()
-          };
-        });
-        
-        supabase.from('medicamentos_cache').insert(cacheItems).then(({ error }) => {
-          if (error) {
-            console.error('[En Vivo API] Error cacheando en Supabase:', error.message, error);
-          } else {
-            console.log(`[En Vivo API] ✅ Guardados exitosamente ${cacheItems.length} registros en medicamentos_cache`);
-          }
-        });
+      if (combinedResults.length > 0) {
+        if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+          console.error('🚨 [ERROR CRÍTICO - Live Search] No se guardaron los precios en medicamentos_cache porque falta SUPABASE_SERVICE_ROLE_KEY.');
+        } else if (supabase) {
+          const cacheItems = combinedResults.map(item => {
+            const p = item.prices[0];
+            return {
+              query: query.toLowerCase(),
+              product_id: item.id,
+              commercial_name: item.commercialName,
+              price: p.price,
+              pharmacy_id: p.pharmacy.id,
+              image_url: item.imageUrl,
+              updated_at: new Date().toISOString()
+            };
+          });
+          
+          supabase.from('medicamentos_cache').insert(cacheItems).then(({ error }) => {
+            if (error) {
+              console.error('🚨 [ERROR CRÍTICO - Live Search] Falló la inserción en medicamentos_cache:', error.message, error);
+            } else {
+              console.log(`[En Vivo API] ✅ Guardados exitosamente ${cacheItems.length} registros en medicamentos_cache con service_role`);
+            }
+          });
+        }
       }
 
       res.json({ results: combinedResults, errors });
