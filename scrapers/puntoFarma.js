@@ -49,11 +49,11 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
 
     const products = await page.evaluate(() => {
       const results = [];
-      const cards = document.querySelectorAll('.card'); 
-      const elementsToParse = cards.length > 0 ? cards : document.querySelectorAll('[class*="product"]');
+      const cards = document.querySelectorAll('[class*="cardProducto"], #listado-productos .card, .product-item'); 
+      const elementsToParse = cards.length > 0 ? cards : document.querySelectorAll('.card, [class*="product"]');
       
       elementsToParse.forEach((el, index) => {
-        if (index > 9) return; // Aumentamos límite a 10
+        if (index > 20) return; // Permitir hasta 20 productos de resultados
         
         const titleEl = el.querySelector('h2, h3, .product-title, .name, .card-title');
         const imgEl = el.querySelector('img');
@@ -63,41 +63,94 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
           const cardText = el.innerText;
           const imageUrl = imgEl ? (imgEl.getAttribute('data-src') || imgEl.getAttribute('data-original') || imgEl.getAttribute('data-lazy-src') || imgEl.src) : null;
           
-          const pricesMatches = [...cardText.matchAll(/Gs\.\s*([\d.]+)/g)];
-          
-          if (titleText && pricesMatches.length > 0) {
-            const allPrices = pricesMatches.map(m => parseInt(m[1].replace(/\./g, ''), 10));
-            const uniquePrices = [...new Set(allPrices)].sort((a, b) => a - b); // Ascendente
-            
-            let normalPrice = uniquePrices[0];
-            let specialPrice = null;
-            let specialMethod = null;
-            
-            const methodMatches = [
-              { regex: /ita[uú]\s*qr/i, name: "Itaú QR" },
-              { regex: /ita[uú]/i, name: "Itaú" },
-              { regex: /basa/i, name: "Basa" },
-              { regex: /ueno/i, name: "Ueno" },
-              { regex: /familiar/i, name: "Familiar" },
-              { regex: /sudameris/i, name: "Sudameris" }
-            ];
-            
-            const foundMethods = methodMatches.filter(m => m.regex.test(cardText));
-            
-            if (foundMethods.length > 0 && uniquePrices.length > 1) {
-              specialMethod = "Con " + foundMethods[0].name;
-              specialPrice = uniquePrices[0]; // El más barato es el especial
-              normalPrice = uniquePrices[1]; // El siguiente es el normal web
-            } else {
-              normalPrice = uniquePrices[0];
+          const linkEl = el.querySelector('a[href*="/producto/"]') || el.querySelector('a[href]');
+          let productUrl = null;
+          if (linkEl && linkEl.getAttribute('href')) {
+            const href = linkEl.getAttribute('href');
+            productUrl = href.startsWith('http') ? href : `https://www.puntofarma.com.py${href}`;
+          }
+
+          // 1. Extraer precio normal web para todos los clientes (priceSection)
+          const priceSection = el.querySelector('[class*="priceSection"], .precios-producto');
+          let normalPrice = null;
+          let originalPrice = null;
+
+          if (priceSection) {
+            // Precio de lista tachado si tiene descuento
+            const delEl = priceSection.querySelector('del, strike, s, [class*="precioSinDescuento"]');
+            if (delEl) {
+              const matchDel = delEl.innerText.match(/Gs\.\s*([\d.]+)/);
+              if (matchDel) originalPrice = parseInt(matchDel[1].replace(/\./g, ''), 10);
             }
-            
+
+            // Buscar el precio de venta web actual (no tachado)
+            const discountedEl = priceSection.querySelector('[class*="precioConDescuento"], [class*="precioActual"]');
+            if (discountedEl) {
+              const m = discountedEl.innerText.match(/Gs\.\s*([\d.]+)/);
+              if (m) normalPrice = parseInt(m[1].replace(/\./g, ''), 10);
+            }
+
+            if (!normalPrice) {
+              const leafPriceEls = Array.from(priceSection.querySelectorAll('*')).filter(node => {
+                return node.children.length === 0 && 
+                       /Gs\.\s*[\d.]+/.test(node.innerText) && 
+                       !node.closest('del, strike, s, [class*="precioSinDescuento"]');
+              });
+              if (leafPriceEls.length > 0) {
+                const m = leafPriceEls[0].innerText.match(/Gs\.\s*([\d.]+)/);
+                if (m) normalPrice = parseInt(m[1].replace(/\./g, ''), 10);
+              }
+            }
+          }
+
+          // 2. Extraer sección de descuento por método de pago / tarjeta / QR (campo aparte)
+          const discountSection = el.querySelector('[class*="discountSection"], .metodos-de-pagos, .descuentos');
+          let specialPrice = null;
+          let specialMethod = null;
+
+          if (discountSection) {
+            const specialLeaf = Array.from(discountSection.querySelectorAll('*')).find(node => {
+              return node.children.length === 0 && /Gs\.\s*[\d.]+/.test(node.innerText);
+            });
+            if (specialLeaf) {
+              const mPrice = specialLeaf.innerText.match(/Gs\.\s*([\d.]+)/);
+              if (mPrice) specialPrice = parseInt(mPrice[1].replace(/\./g, ''), 10);
+            }
+
+            const methodSmall = discountSection.querySelector('small');
+            const imgMethod = discountSection.querySelector('img[alt]');
+            if (methodSmall && methodSmall.innerText.trim()) {
+              specialMethod = methodSmall.innerText.trim().replace(/^o pagando con\s*/i, '');
+            } else if (imgMethod && imgMethod.alt) {
+              specialMethod = imgMethod.alt;
+            }
+          }
+
+          // Fallback general si no se encontró priceSection
+          if (!normalPrice) {
+            const pricesMatches = [...cardText.matchAll(/Gs\.\s*([\d.]+)/g)];
+            if (pricesMatches.length > 0) {
+              const allPrices = pricesMatches.map(m => parseInt(m[1].replace(/\./g, ''), 10));
+              normalPrice = allPrices[0];
+            }
+          }
+
+          if (!originalPrice && normalPrice) {
+            originalPrice = normalPrice;
+          }
+
+          let discountPercentage = 0;
+          if (originalPrice > normalPrice) {
+            discountPercentage = Math.round(((originalPrice - normalPrice) / originalPrice) * 100);
+          }
+
+          if (titleText && normalPrice) {
             results.push({
               id: `pf-${index}`,
               commercialName: titleText,
               composition: '---',
               laboratory: 'Desconocido',
-              details: 'Extraído en vivo',
+              details: discountPercentage > 0 ? `Descuento web: ${discountPercentage}% OFF` : 'Extraído en vivo',
               imageUrl: imageUrl,
               prices: [
                 {
@@ -106,12 +159,17 @@ const scrapePuntoFarma = async (query, sharedBrowser) => {
                     name: 'Punto Farma',
                     class: 'badge-punto-farma'
                   },
-                  price: normalPrice, // mantenemos compatibilidad
+                  price: normalPrice,
+                  originalPrice: originalPrice,
+                  discountPercentage: discountPercentage,
                   normalPrice: normalPrice,
                   specialPrice: specialPrice,
-                  specialMethod: specialMethod
+                  specialMethod: specialMethod,
+                  url: productUrl
                 }
-              ]
+              ],
+              specialPrice: specialPrice ? { price: specialPrice, condition: specialMethod } : null,
+              missingItems: 0
             });
           }
         }
