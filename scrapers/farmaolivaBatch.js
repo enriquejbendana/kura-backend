@@ -1,33 +1,38 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
-const fs = require('fs');
-const path = require('path');
 
-// Obtener los 250 términos farmacéuticos principales de IQVIA
-const getSeedTerms = () => {
-  const seedsPath = path.join(__dirname, '..', 'iqvia_seeds.json');
-  if (fs.existsSync(seedsPath)) {
-    try {
-      const allSeeds = JSON.parse(fs.readFileSync(seedsPath, 'utf8'));
-      return allSeeds.slice(0, 250);
-    } catch (e) {
-      console.error('[Farmaoliva] Error leyendo iqvia_seeds.json:', e.message);
-    }
-  }
-  // Fallback con los medicamentos esenciales más buscados
-  return [
-    'KITADOL', 'ACTRON', 'NOVALGINA', 'SEGURA', 'ZATIFEN', 'SELENE', 'PRODENT',
-    'ACCORD', 'UNIGALEN', 'CORTAGRIP', 'ETIDOL', 'ANGRIPAS', 'PRONTA', 'BIOGRAMON',
-    'ANALER', 'NOVOGRIP', 'ABRILAR', 'CLINOMIN', 'BERAFEN', 'MESIGYNA', 'MICARDIS',
-    'DOLO', 'TELMINEST', 'HIPERCOR', 'FINIDOL', 'MIRACLE', 'EUROGESIC', 'LERCADIP',
-    'PIASCLEDINE', 'TEMISAR', 'TEMLOSAL', 'NAFAZOLINA', 'ALKA-SELTZER', 'HIDROLAGENO',
-    'HYNDRIAX', 'BISOLVON', 'ACOTOL', 'AMLO', 'PARACETAMOL', 'AMOXICILINA', 'IBUPROFENO'
-  ];
-};
+// Lista de los 250 medicamentos y marcas comerciales más buscados en Paraguay
+const TOP_250_MEDICAMENTOS = [
+  "KITADOL","ACTRON","NOVALGINA","SEGURA","ZATIFEN","SELENE","PRODENT","ACCORD","UNIGALEN","CORTAGRIP",
+  "ETIDOL","ANGRIPAS","PRONTA","BIOGRAMON","ANALER","NOVOGRIP","ABRILAR","CLINOMIN","BERAFEN","MESIGYNA",
+  "MICARDIS","DOLO","TELMINEST","HIPERCOR","FINIDOL","MIRACLE","EUROGESIC","LERCADIP","PIASCLEDINE","TEMISAR",
+  "TEMLOSAL","NAFAZOLINA","ALKA-SELTZER","HIDROLAGENO","HYNDRIAX","BISOLVON","ACOTOL","CLAVINEX","PREDNICORT","GRIPIDOL",
+  "YASMIN","NABILA","ODONTOL","CORENTEL","DRUSA","TRIO-VAL","DOLOSTOP","ILTUXAM","ALLEGRA","GRIFOPARKIN",
+  "DIUSARTAN","SERFLU","LEVETAM","36 HORAS","RESPIRAN","TENSIONAL","EUROPRES","OSELTA","SALBUTRAL","DOLGENAL",
+  "LOSARTAN","CAPRIMIDA","SLINDA","TRIAM","CONTEX","QUETIAPIN","BANES","HEXALER","PRAMIL","YERON",
+  "ILTUX","ALERGINA","VINIL","PRAXO","CASTIL","MUXOL","ORIZON","HIPOGLUCIN","Z-CAL","MICROGYNON",
+  "RINOVAL","ALGILEM","GYNOGEL","DIANE-35","EVRA","CEXIMA","LERCATEN","MOMENTA","DESNALER","MOVENS",
+  "FLUSTEINA","AMOXIDAL","QUETIAZIC","EMERGEN","DR SELBY","ECTIBAN","FEMELLE","CARDIOSAN","AZIMUT","INHALAN",
+  "POSLAC","ARDILAN","ACEMUK","INFILTREX","CIMAFIX","CELEXIN","TALOPRAM","CONFIUM","VERONIQ","FEMALVI",
+  "ACID","TAFIROL","NEUMOCORT","Z-MOL","CARDATEN","RAPIDOL","LODINEST","FLUTISAN","CALMINA","ARCOXIA",
+  "SOMIT","YRENE","FILINAR","BIPAN","MAGNUS","ACNECUR","FLAMUS","DIVALP","TORALGIN","PLAMODEX",
+  "DISEMID","ANAMOX","BINEST","NESTIFLU","CONTROL","TRIXAN","DOLOFINARTRIT","SAXENDA","ETIMICIN","VALAPLEX",
+  "FUCOXIN","SOSTAC","KETO-ODONTOL","ARTOFLEX","NEVICAR","LEVONAM","HEROLAN","SOMNO","DEX","BRAXAN",
+  "XUMER","ETICARD","POSIVYL","EFAGESIC","CECAN","MARIMER","ULTRABIOTIC","CAUTIVAL","QLAIRA","INFRATEN",
+  "ARTRO","DIABETOL","SIMPERTEN","DONABELLA","COLIK","SALVE","KOPODEX","DICLOFEN","ETIBLOKER","TELLMI",
+  "ZAFIN","RIMPAL","APIRON","CARLIT","BRONCOSAN","NEO","CORBIS","DIXI-35","VALCOTE","NEUROTOL",
+  "NOVO","ATENOCAR","BRUNELLE","NOVLEN","LOI","BRONTEL","MEXADEN","NOFLAME","PRILARTAN","DEPRAX",
+  "AZITRONEST","DOLANET","AMBILAND","TIXA","ETISONA","RESPIBEN","INDUCTAL","ASPIRINA","MAXIVIT","OBEXOL",
+  "CLEDIUM","CRONOVAL","REALTA","COLLAGEN","ACTIZIM","PENBRONK","LOZAX","GADOCAL","Z-VICK","CORTIPREX",
+  "HEROXIL","GINGER","CALCIOFAR","BRONCO","SABRIL","LEVOFLOX","INAFLEX","CORTAGR","FINARTRIT","AUXXIL",
+  "DOXATAR","TRITTICO","SOP","ETORIX","GENACOL","ZODOL","NEUROVAL","SIONUS","DENTIFIX","QUIMIUM",
+  "AMOXETIC","GYNOSEP","SEDIPRAL","ACTERIL","ZOLPIDEM","VIDACIL","BLOX","PARSOL","CONVERTAL","PLUSANE",
+  "NEOGYNON","SOLPAN","LUCOFEN","MADOZIDE","DUO-DECADRON","EUROCOR","COXX","CARDIODIL","SUPRAHYAL","LEPTICO"
+];
 
 const scrapeFarmaolivaBatch = async (customTerms = null, onProgress = null) => {
-  const terms = customTerms && customTerms.length > 0 ? customTerms : getSeedTerms();
+  const terms = customTerms && customTerms.length > 0 ? customTerms : TOP_250_MEDICAMENTOS;
   console.log(`\n[Farmaoliva] Iniciando extracción batch de catálogo con ${terms.length} términos sembrados...`);
 
   let browser = await puppeteer.launch({
