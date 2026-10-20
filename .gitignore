@@ -1,3 +1,16 @@
 node_modules/
 .env
 visits.json
+logs/
+*.log
+*debug.html
+test*.js
+test*.py
+check-db.js
+debug-supabase.js
+rescue_salac.js
+restore_cache_from_products.js
+targeted.js
+iqvia_raw.txt
+parse_iqvia.js
+local-scraper/
