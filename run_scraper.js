@@ -7,6 +7,8 @@ const crypto = require('crypto');
 
 const { scrapePuntoFarmaCategory } = require('./scrapers/puntoFarmaCategory');
 const { scrapeFarmacenterCategory } = require('./scrapers/farmacenterCategory');
+const { scrapeCatedralCategory } = require('./scrapers/catedralCategory');
+const { scrapeFarmaolivaBatch } = require('./scrapers/farmaolivaBatch');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -27,6 +29,7 @@ const CHAINS_CONFIG = [
   {
     id: 'punto_farma',
     name: 'Punto Farma',
+    type: 'category',
     minThreshold: 2500, // En corridas sanas extrae ~5.800 items. Si cae de 2.500, no se toca la DB.
     categories: [
       'https://www.puntofarma.com.py/categoria/1/medicamentos',
@@ -48,7 +51,8 @@ const CHAINS_CONFIG = [
   {
     id: 'farmacenter',
     name: 'Farmacenter',
-    minThreshold: 500, // En corridas sanas extrae ~1.400 items. Si cae de 500, no se toca la DB.
+    type: 'category',
+    minThreshold: 500, // En corridas sanas extrae ~1.400 - 10.000 items. Si cae de 500, no se toca la DB.
     categories: [
       'https://www.farmacenter.com.py/medicamentos',
       'https://www.farmacenter.com.py/cuidado-de-la-salud',
@@ -60,12 +64,29 @@ const CHAINS_CONFIG = [
       'https://www.farmacenter.com.py/bazar-y-hogar'
     ],
     scraper: scrapeFarmacenterCategory
+  },
+  {
+    id: 'catedral',
+    name: 'Farmacia Catedral',
+    type: 'category',
+    minThreshold: 300, // Categoría medicamentos contiene 4.884 productos en 245 páginas
+    categories: [
+      'https://www.farmaciacatedral.com.py/categoria/1/medicamentos'
+    ],
+    scraper: scrapeCatedralCategory
+  },
+  {
+    id: 'farmaoliva',
+    name: 'Farmaoliva',
+    type: 'batch',
+    minThreshold: 150, // 250 términos farmacéuticos sembrados (IQVIA)
+    scraper: scrapeFarmaolivaBatch
   }
 ];
 
-async function executeChainScraping(chainConfig) {
+async function executeCategoryScraping(chainConfig) {
   console.log(`\n================================================================`);
-  console.log(`🚀 Iniciando extracción: ${chainConfig.name}`);
+  console.log(`🚀 Iniciando extracción por categorías: ${chainConfig.name}`);
   console.log(`🎯 Categorías a procesar: ${chainConfig.categories.length} | Umbral mínimo seguro: >= ${chainConfig.minThreshold} productos`);
   console.log(`================================================================`);
 
@@ -73,110 +94,142 @@ async function executeChainScraping(chainConfig) {
   const errors = [];
   let globalPageCount = 0;
 
-  let browser = await puppeteer.launch({
-    headless: 'new',
-    protocolTimeout: 120000,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-blink-features=AutomationControlled'
-    ]
-  });
+  // Catedral usa fetch directo a JSON API y no requiere Chromium
+  const requiresBrowser = chainConfig.id !== 'catedral';
+  let browser = null;
 
-  for (const catUrl of chainConfig.categories) {
-    let page = 1;
-    let hasMore = true;
-    let retries = 0;
-    let lastPageSignature = '';
+  if (requiresBrowser) {
+    browser = await puppeteer.launch({
+      headless: 'new',
+      protocolTimeout: 120000,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled'
+      ]
+    });
+  }
 
-    while (hasMore && page <= 1000) {
-      // Auto-limpieza cada 50 páginas para liberar memoria RAM
-      if (globalPageCount > 0 && globalPageCount % 50 === 0) {
-        console.log(`[Lifecycle] 50 páginas procesadas. Reiniciando Chromium para evitar fugas de memoria...`);
-        await browser.close().catch(() => {});
-        browser = await puppeteer.launch({
-          headless: 'new',
-          protocolTimeout: 120000,
-          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-        });
-      }
+  try {
+    for (const catUrl of chainConfig.categories) {
+      let page = 1;
+      let hasMore = true;
+      let retries = 0;
+      let lastPageSignature = '';
 
-      if (!browser || !browser.isConnected()) {
-        console.log(`[Lifecycle] Proceso Chromium desconectado. Reiniciando navegador...`);
-        browser = await puppeteer.launch({
-          headless: 'new',
-          protocolTimeout: 120000,
-          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-        });
-      }
-
-      try {
-        const pageItems = await chainConfig.scraper(catUrl, page, browser);
-
-        if (pageItems && pageItems.error) {
-          throw new Error(pageItems.message || 'Error desconocido en scraper');
-        }
-
-        if (!pageItems || pageItems.length === 0) {
-          hasMore = false;
-          console.log(`[${chainConfig.name}] Fin de categoría: ${catUrl} (pág ${page})`);
-        } else {
-          // Detectar repetición de página (bucle infinito de paginación)
-          const currentSignature = pageItems.map(r => r.commercialName).slice(0, 5).join('|');
-          if (currentSignature && currentSignature === lastPageSignature) {
-            console.log(`[${chainConfig.name}] [Fin de Categoría] Detectada página repetida en ${catUrl} (pág ${page}). Finalizando categoría limpiamente.`);
-            hasMore = false;
-            break;
+      while (hasMore && page <= 1000) {
+        if (requiresBrowser) {
+          if (globalPageCount > 0 && globalPageCount % 50 === 0) {
+            console.log(`[Lifecycle] 50 páginas procesadas. Reiniciando Chromium para evitar fugas de memoria...`);
+            await browser.close().catch(() => {});
+            browser = await puppeteer.launch({
+              headless: 'new',
+              protocolTimeout: 120000,
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            });
           }
-          lastPageSignature = currentSignature;
 
-          results.push(...pageItems);
-          page++;
-          globalPageCount++;
-          retries = 0;
-
-          // Pausa respetuosa de 1.5s entre páginas para no sobrecargar el servidor
-          await new Promise(r => setTimeout(r, 1500));
+          if (!browser || !browser.isConnected()) {
+            console.log(`[Lifecycle] Proceso Chromium desconectado. Reiniciando navegador...`);
+            browser = await puppeteer.launch({
+              headless: 'new',
+              protocolTimeout: 120000,
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            });
+          }
         }
-      } catch (err) {
-        console.error(`[${chainConfig.name}] Error en ${catUrl} pág ${page}: ${err.message}`);
-        retries++;
-        if (retries > 3) {
-          const errMsg = `Fallo tras 3 reintentos en categoría ${catUrl} (pág ${page}): ${err.message}`;
-          console.error(`[${chainConfig.name}] ${errMsg}. Continuando con siguiente categoría.`);
-          errors.push(errMsg);
-          hasMore = false;
-        } else {
-          console.log(`[${chainConfig.name}] Reintentando pág ${page} (Intento ${retries}/3) en 10s...`);
-          await new Promise(r => setTimeout(r, 10000));
-          await browser.close().catch(() => {});
-          browser = await puppeteer.launch({
-            headless: 'new',
-            protocolTimeout: 120000,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-          });
+
+        try {
+          const pageItems = await chainConfig.scraper(catUrl, page, browser);
+
+          if (pageItems && pageItems.error) {
+            throw new Error(pageItems.message || 'Error desconocido en scraper');
+          }
+
+          if (!pageItems || pageItems.length === 0) {
+            hasMore = false;
+            console.log(`[${chainConfig.name}] Fin de categoría: ${catUrl} (pág ${page})`);
+          } else {
+            // Detectar repetición de página (bucle infinito de paginación)
+            const currentSignature = pageItems.map(r => r.commercialName).slice(0, 5).join('|');
+            if (currentSignature && currentSignature === lastPageSignature) {
+              console.log(`[${chainConfig.name}] [Fin de Categoría] Detectada página repetida en ${catUrl} (pág ${page}). Finalizando categoría limpiamente.`);
+              hasMore = false;
+              break;
+            }
+            lastPageSignature = currentSignature;
+
+            results.push(...pageItems);
+            page++;
+            globalPageCount++;
+            retries = 0;
+
+            // Pausa respetuosa de 1.5s entre páginas para no sobrecargar el servidor
+            await new Promise(r => setTimeout(r, 1500));
+          }
+        } catch (err) {
+          console.error(`[${chainConfig.name}] Error en ${catUrl} pág ${page}: ${err.message}`);
+          retries++;
+          if (retries > 3) {
+            const errMsg = `Fallo tras 3 reintentos en categoría ${catUrl} (pág ${page}): ${err.message}`;
+            console.error(`[${chainConfig.name}] ${errMsg}. Continuando con siguiente categoría.`);
+            errors.push(errMsg);
+            hasMore = false;
+          } else {
+            console.log(`[${chainConfig.name}] Reintentando pág ${page} (Intento ${retries}/3) en 10s...`);
+            await new Promise(r => setTimeout(r, 10000));
+            if (requiresBrowser) {
+              await browser.close().catch(() => {});
+              browser = await puppeteer.launch({
+                headless: 'new',
+                protocolTimeout: 120000,
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+              });
+            }
+          }
         }
       }
     }
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 
-  await browser.close().catch(() => {});
   return { results, errors };
 }
 
 async function runScraper() {
   const startTime = Date.now();
   console.log(`[${new Date().toISOString()}] ========================================================`);
-  console.log(`[${new Date().toISOString()}] INICIANDO PIPELINE DE SCRAPING NOCTURNO KURA PY`);
+  console.log(`[${new Date().toISOString()}] INICIANDO PIPELINE DE SCRAPING NOCTURNO KURA PY (4 CADENAS)`);
   console.log(`[${new Date().toISOString()}] ========================================================`);
 
   const summary = [];
   let successfulUpserts = 0;
 
   for (const chain of CHAINS_CONFIG) {
-    const { results: rawResults, errors: rawErrors } = await executeChainScraping(chain);
+    let rawResults = [];
+    let rawErrors = [];
+
+    if (chain.type === 'category') {
+      const outcome = await executeCategoryScraping(chain);
+      rawResults = outcome.results;
+      rawErrors = outcome.errors;
+    } else if (chain.type === 'batch') {
+      console.log(`\n================================================================`);
+      console.log(`🚀 Iniciando extracción batch de términos sembrados: ${chain.name}`);
+      console.log(`🎯 Umbral mínimo seguro: >= ${chain.minThreshold} productos`);
+      console.log(`================================================================`);
+      try {
+        const outcome = await chain.scraper();
+        rawResults = outcome.results || [];
+        rawErrors = outcome.errors || [];
+      } catch (err) {
+        console.error(`[${chain.name}] Error crítico en ejecución batch:`, err.message);
+        rawErrors.push(`Fallo batch: ${err.message}`);
+      }
+    }
 
     // Deduplicar en memoria por nombre comercial limpio
     const uniqueMap = new Map();
@@ -276,7 +329,7 @@ async function runScraper() {
 
   console.log('--------------------------------------------------------------------------------');
   console.log(
-    'Cadena'.padEnd(16) +
+    'Cadena'.padEnd(20) +
     '| ' + 'Extraídos'.padEnd(12) +
     '| ' + 'Umbral Mín.'.padEnd(14) +
     '| ' + 'Estado'.padEnd(26) +
@@ -285,7 +338,7 @@ async function runScraper() {
   console.log('--------------------------------------------------------------------------------');
   for (const s of summary) {
     console.log(
-      s.chain.padEnd(16) +
+      s.chain.padEnd(20) +
       '| ' + s.extracted.toString().padEnd(12) +
       '| ' + s.threshold.toString().padEnd(14) +
       '| ' + s.status.padEnd(26) +
