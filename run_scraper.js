@@ -30,21 +30,20 @@ const CHAINS_CONFIG = [
     id: 'punto_farma',
     name: 'Punto Farma',
     type: 'category',
-    minThreshold: 2500, // En corridas sanas extrae ~5.800 items. Si cae de 2.500, no se toca la DB.
+    minThreshold: 4500, // Umbral del 80% del catalogo normal (~5.800 items). Si cae de 4.500 no toca la DB.
     categories: [
       'https://www.puntofarma.com.py/categoria/1/medicamentos',
-      'https://www.puntofarma.com.py/categoria/130/cuidado-personal',
-      'https://www.puntofarma.com.py/categoria/32/dermocosmetica',
+      'https://www.puntofarma.com.py/categoria/472/mundo-dermocosmetica',
+      'https://www.puntofarma.com.py/categoria/5/higiene',
       'https://www.puntofarma.com.py/categoria/84/mama-y-bebe',
+      'https://www.puntofarma.com.py/categoria/22/cuidado-del-bebe',
       'https://www.puntofarma.com.py/categoria/235/suplementos-y-vitaminas',
       'https://www.puntofarma.com.py/categoria/271/primeros-auxilios',
       'https://www.puntofarma.com.py/categoria/20/perfumes-y-fragancias',
       'https://www.puntofarma.com.py/categoria/39/cosmeticos',
-      'https://www.puntofarma.com.py/categoria/58/higiene',
-      'https://www.puntofarma.com.py/categoria/208/salud',
       'https://www.puntofarma.com.py/categoria/219/hogar',
       'https://www.puntofarma.com.py/categoria/226/nutricion-y-deporte',
-      'https://www.puntofarma.com.py/categoria/310/cuidado-del-adulto-mayor'
+      'https://www.puntofarma.com.py/categoria/481/cuidado-del-adulto-mayor'
     ],
     scraper: scrapePuntoFarmaCategory
   },
@@ -172,14 +171,14 @@ async function executeCategoryScraping(chainConfig) {
         } catch (err) {
           console.error(`[${chainConfig.name}] Error en ${catUrl} pág ${page}: ${err.message}`);
           retries++;
-          if (retries > 3) {
-            const errMsg = `Fallo tras 3 reintentos en categoría ${catUrl} (pág ${page}): ${err.message}`;
+          if (retries > 5) {
+            const errMsg = `Fallo tras 5 reintentos en categoría ${catUrl} (pág ${page}): ${err.message}`;
             console.error(`[${chainConfig.name}] ${errMsg}. Continuando con siguiente categoría.`);
             errors.push(errMsg);
             hasMore = false;
           } else {
-            console.log(`[${chainConfig.name}] Reintentando pág ${page} (Intento ${retries}/3) en 10s...`);
-            await new Promise(r => setTimeout(r, 10000));
+            console.log(`[${chainConfig.name}] Reintentando pág ${page} (Intento ${retries}/5) en 15s...`);
+            await new Promise(r => setTimeout(r, 15000));
             if (requiresBrowser) {
               await browser.close().catch(() => {});
               browser = await puppeteer.launch({

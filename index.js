@@ -382,9 +382,7 @@ app.get('/api/live-search', async (req, res) => {
               const p = item.prices && item.prices[0];
               const cleanName = (item.commercialName || '').trim();
               const pharmacyId = (p && p.pharmacy && p.pharmacy.id) ? p.pharmacy.id : 'catedral';
-              const stableId = (item.id && !item.id.match(/^(cat|oli|tot|fc|pf)-\d+$/))
-                ? item.id
-                : `${pharmacyId}-${crypto.createHash('md5').update(cleanName.toLowerCase()).digest('hex').substring(0, 10)}`;
+              const stableId = `${pharmacyId}-${crypto.createHash('md5').update(cleanName.toLowerCase()).digest('hex').substring(0, 10)}`;
               item.id = stableId;
 
               return {
