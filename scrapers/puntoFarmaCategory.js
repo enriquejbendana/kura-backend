@@ -133,10 +133,10 @@ const scrapePuntoFarmaCategory = async (categoryUrl, pageNumber, sharedBrowser) 
     return products;
   } catch (error) {
     console.error('[Punto Farma] Error en scraping category:', error.message);
-    return [];
+    return { error: true, message: error.message };
   } finally {
     if (page && !page.isClosed()) { await page.close().catch(() => {}); }
-    if (browser) if (closeBrowser) { await browser.close(); }
+    if (browser && closeBrowser) { await browser.close().catch(() => {}); }
   }
 };
 

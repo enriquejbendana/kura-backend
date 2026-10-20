@@ -102,7 +102,7 @@ const scrapeFarmacenterCategory = async (categoryUrl, pageNumber, sharedBrowser 
     }
   } catch (error) {
     console.error(`[Farmacenter] Error extrayendo pág ${pageNumber}:`, error.message);
-    return [];
+    return { error: true, message: error.message };
   }
 };
 

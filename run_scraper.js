@@ -101,6 +101,13 @@ async function executeChainScraping(chainConfig) {
           protocolTimeout: 120000,
           args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
         });
+      if (!browser || !browser.isConnected()) {
+        console.log(`[Lifecycle] Proceso Chromium desconectado. Reiniciando navegador...`);
+        browser = await puppeteer.launch({
+          headless: 'new',
+          protocolTimeout: 120000,
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        });
       }
 
       try {
